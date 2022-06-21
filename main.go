@@ -24,6 +24,8 @@ type Entry struct {
 func main() {
 	summarize := flag.Bool("summary", false, "Summarized output instead of CSV")
 	detailed := flag.Bool("detailed", false, "Detailed view (includes token, response token_ttl).")
+	buffersize := flag.Int("buffersize", 262144, "Adjust line buffer size max.")
+
 	flag.Parse()
 
 	_, err := os.Stdin.Stat()
@@ -35,9 +37,8 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 
-	const maxCapacity int = 262144 // TODO: Tunable?
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
+	buf := make([]byte, *buffersize)
+	scanner.Buffer(buf, *buffersize)
 
 	for scanner.Scan() {
 		var t = scanner.Text()
