@@ -32,7 +32,7 @@ $ tail -f audit.log | ./revizio -errors
 "<error>","bar/","auth/approle/role/gcp_pipeline/secret-id","approle","","1 error occurred:\n\t* permission denied\n\n"
 ...
 
-$ tail -f audit.log | ./revizio -errors -tokens -verbose
+$ tail -f audit.log | ./revizio -errors -tokens
 "<token_creation>","foo/prod/","auth/approle/login","approle","batch"
 "<token_creation>","foo/dev/","auth/approle/login","approle","batch"
 "<token_creation>","foo/prod/","auth/approle/login","approle","batch"
