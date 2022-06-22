@@ -24,6 +24,7 @@ type Entry struct {
 	operation      string
 	error_text     string
 	remote_address string
+	time           string
 	error_present  bool
 	token_creation bool
 }
@@ -123,23 +124,24 @@ func printSummary(entries []Entry) {
 }
 
 func printError(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.time, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
 }
 
 func printErrorVerbose(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.time, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
 }
 
 func printTokenCreation(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.namespace_path, e.path, e.mount_type, e.token_type)
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.time, e.namespace_path, e.path, e.mount_type, e.token_type)
 }
 
 func printTokenCreationVerbose(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",%d\n", e.entry_type, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, int(e.token_ttl))
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",%d\n", e.entry_type, e.time, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, int(e.token_ttl))
 }
 
 func handleResponse(line map[string](interface{})) Entry {
 	e := Entry{
+		time:           "",
 		entry_type:     "",
 		request_id:     "",
 		request_token:  "",
@@ -152,6 +154,10 @@ func handleResponse(line map[string](interface{})) Entry {
 		remote_address: "",
 		token_creation: false,
 		error_present:  false,
+	}
+
+	if time, okay := line["time"].(string); okay {
+		e.time = time
 	}
 
 	if request, okay := line["request"].(map[string]interface{}); okay {
