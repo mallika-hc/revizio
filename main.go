@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	mapset "github.com/deckarep/golang-set/v2"
 )
 
 type Entry struct {
+	entry_type     string
 	request_id     string
 	request_token  string
 	namespace_path string
@@ -19,14 +21,25 @@ type Entry struct {
 	mount_type     string
 	token_type     string
 	token_ttl      float64
+	operation      string
+	error_text     string
+	remote_address string
+	error_present  bool
+	token_creation bool
 }
 
 func main() {
-	summarize := flag.Bool("summary", false, "Summarized output instead of CSV")
-	detailed := flag.Bool("detailed", false, "Detailed view (includes token, response token_ttl).")
+	summarize := flag.Bool("summary", false, "Summarized output instead of CSV.")
+	errors := flag.Bool("errors", false, "Output errors.")
+	tokens := flag.Bool("tokens", false, "Output token creation metadata.")
+	verbose := flag.Bool("verbose", false, "More detail.")
 	buffersize := flag.Int("buffersize", 262144, "Adjust line buffer size max.")
-
 	flag.Parse()
+
+	if !*tokens && !*errors {
+		flag.PrintDefaults()
+		os.Exit(127)
+	}
 
 	_, err := os.Stdin.Stat()
 	if err != nil {
@@ -49,15 +62,23 @@ func main() {
 		if err == nil {
 			if jsonMap["type"] == "response" {
 				e := handleResponse(jsonMap)
-				if (Entry{} != e) {
-					entries = append(entries, e)
-					if !*summarize {
-						if *detailed {
-							printMapDetailed(e)
+				entries = append(entries, e)
+				if !*summarize {
+					if *tokens && e.token_creation {
+						if *verbose {
+							printTokenCreationVerbose(e)
 						} else {
-							printMap(e)
+							printTokenCreation(e)
 						}
 					}
+					if *errors && e.error_present {
+						if *verbose {
+							printErrorVerbose(e)
+						} else {
+							printError(e)
+						}
+					}
+
 				}
 			}
 
@@ -101,34 +122,92 @@ func printSummary(entries []Entry) {
 	fmt.Printf("Total Number of Service Tokens:     %d\n", total_service_tokens)
 }
 
-func printMap(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\"\n", e.namespace_path, e.path, e.mount_type, e.token_type)
+func printError(e Entry) {
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
 }
 
-func printMapDetailed(e Entry) {
-	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",%d\n", e.request_id, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, int(e.token_ttl))
+func printErrorVerbose(e Entry) {
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, e.error_text)
+}
+
+func printTokenCreation(e Entry) {
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n", e.entry_type, e.namespace_path, e.path, e.mount_type, e.token_type)
+}
+
+func printTokenCreationVerbose(e Entry) {
+	fmt.Printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",%d\n", e.entry_type, e.request_id, e.remote_address, e.request_token, e.namespace_path, e.path, e.mount_type, e.token_type, int(e.token_ttl))
 }
 
 func handleResponse(line map[string](interface{})) Entry {
-	e := Entry{}
+	e := Entry{
+		entry_type:     "",
+		request_id:     "",
+		request_token:  "",
+		namespace_path: "",
+		path:           "",
+		mount_type:     "",
+		token_type:     "",
+		operation:      "",
+		error_text:     "",
+		remote_address: "",
+		token_creation: false,
+		error_present:  false,
+	}
 
-	request := line["request"].(map[string]interface{})
+	if request, okay := line["request"].(map[string]interface{}); okay {
+		if operation, okay := request["operation"]; okay {
+			e.operation = operation.(string)
+		}
 
-	response := line["response"].(map[string]interface{})
+		if path, okay := request["path"]; okay {
+			e.path = path.(string)
+		} else {
+			e.path = "<no_path>"
+		}
 
-	if auth, okay := response["auth"].(map[string]interface{}); okay {
-		if token_type, okay := auth["token_type"]; okay {
-			e.token_type = token_type.(string)
+		if request_id, okay := request["id"]; okay {
+			e.request_id = request_id.(string)
+		}
 
-			if operation, okay := request["operation"]; okay {
-				if operation == "update" {
+		if mount_type, okay := request["mount_type"]; okay {
+			e.mount_type = mount_type.(string)
+		} else {
+			e.mount_type = "<no_mount_type>"
+		}
 
-					if request_id, okay := request["id"]; okay {
-						e.request_id = request_id.(string)
-					}
-					if request_token, okay := request["client_token"]; okay {
-						e.request_token = request_token.(string)
-					} else if request_token, okay := auth["client_token"]; okay {
+		if request_token, okay := request["client_token"]; okay {
+			e.request_token = request_token.(string)
+		}
+
+		if remote_address, okay := request["remote_address"]; okay {
+			e.remote_address = remote_address.(string)
+		}
+
+		namespace := request["namespace"].(map[string]interface{})
+		if namespace_path, okay := namespace["path"]; okay {
+			e.namespace_path = namespace_path.(string)
+		} else {
+			e.namespace_path = "<root>"
+		}
+	}
+
+	if error_text, okay := line["error"].(string); okay {
+		e.error_present = true
+		e.entry_type = "<error>"
+		error_text_nonewlines := strings.ReplaceAll(error_text, "\n", "\\n")
+		e.error_text = strings.ReplaceAll(error_text_nonewlines, "\t", "\\t")
+	}
+
+	if response, okay := line["response"].(map[string]interface{}); okay {
+
+		if auth, okay := response["auth"].(map[string]interface{}); okay {
+			if token_type, okay := auth["token_type"]; okay {
+				e.token_type = token_type.(string)
+
+				if e.operation == "update" {
+					e.token_creation = true
+					e.entry_type = "<token_creation>"
+					if request_token, okay := auth["client_token"]; okay {
 						e.request_token = request_token.(string)
 					}
 
@@ -136,34 +215,10 @@ func handleResponse(line map[string](interface{})) Entry {
 						e.token_ttl = token_ttl
 					}
 
-					if path, okay := request["path"]; okay {
-						e.path = path.(string)
-					} else {
-						e.path = "<no_path>"
-					}
-
-					if mount_type, okay := request["mount_type"]; okay {
-						e.mount_type = mount_type.(string)
-					} else {
-						e.mount_type = "<no_mount_type>"
-					}
-
-					namespace := request["namespace"].(map[string]interface{})
-					if namespace_path, okay := namespace["path"]; okay {
-						e.namespace_path = namespace_path.(string)
-					} else {
-						e.namespace_path = "<root>"
-					}
-				} else {
-					return Entry{}
 				}
-			} else {
-				return Entry{}
 			}
-		} else {
-			return Entry{}
-		}
 
+		}
 	}
 	return e
 
